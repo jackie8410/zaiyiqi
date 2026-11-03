@@ -1,0 +1,13 @@
+在一起 — website sample photograph provenance
+
+Both images were created with the built-in image_gen tool on 2026-11-03.
+They depict wholly fictional people and are sample artwork, not user uploads or actual customer results.
+Display the UI label “AI生成示例 · 虚构人物” whenever these are shown as sample photographs.
+Format: PNG. Resolution: 1536 x 1024 pixels, landscape 3:2.
+Visual QA: inspected both generated images for subject, composition, natural facial texture, distinct people and hands.
+
+family.png prompt:
+Use case: photorealistic-natural. Asset type: hero sample photograph for a Chinese personal keepsake album website named 在一起. Create a landscape 3:2 candid documentary photograph of a fictional Chinese family with three generations: grandmother and grandfather in their late 60s, an adult daughter and her husband in their 30s, and one child about 7 years old, naturally sitting close together at a wooden picnic table in a peaceful lakeside park during golden hour. They are smiling gently and looking at one another, one elderly hand resting lightly on the child's shoulder. Warm cream, muted olive, soft rust clothing, comfortable everyday linen and knitwear. Genuine facial texture, distinct believable faces, natural wrinkles, realistic hands. Quiet, intimate, thoughtful mood, soft late-afternoon light through trees, shallow depth of field with a blurred lake and distant trees. Editorial family photography, subtle analog film grain, understated warm colors, high photographic quality. Composition leaves a little breathing room around the family so it can be cropped for different album layouts. No words, logos, watermarks, photo borders, graphic elements, exaggerated smiles, or collage. Entirely fictional people.
+
+travel.png prompt:
+Use case: photorealistic-natural. Asset type: travel sample photograph for a Chinese personal keepsake album website. Create a landscape 3:2 editorial travel photograph of a fictional Chinese woman in her late 20s wearing an ivory cardigan over a muted olive dress, standing on a wooden boardwalk next to a clear turquoise alpine lake. Mountain peaks and green forest in the distance, gentle golden morning sun and a clean pale sky. She glances back toward the camera naturally, holding a straw hat at her side, photographed from medium distance so she occupies about a quarter of the frame and the scenery feels spacious. Warm yet fresh natural color grading, authentic facial texture, realistic anatomy and hands, subtle analog-film quality. A peaceful imagined holiday memory. No text, logos, watermarks, photo borders, famous trademarked buildings or collage. Entirely fictional person.
