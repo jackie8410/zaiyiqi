@@ -2,6 +2,9 @@
 
 中文自助照片创作与互动相册网站。React / Vinext / Cloudflare Workers + D1 + R2；Sites 托管认证。
 
+- 在线使用：[打开「在一起」](https://zaiyiqi-album.steelylinen1.chatgpt.site)
+- 源码仓库：[jackie8410/zaiyiqi](https://github.com/jackie8410/zaiyiqi)
+
 ## 已实现
 
 - 单张照片衣着、背景、自然修饰的AI表单与服务接口；现有合影加人、全新合影、虚拟旅行。
@@ -16,7 +19,7 @@
 
 正式网址：[在一起](https://zaiyiqi-album.steelylinen1.chatgpt.site)。2026-11-10已将专用OpenAI密钥配置为线上保密变量，模型为`gpt-image-2`，重新部署成功。使用实际提供商与提示词代码的旅游换装、合影加人两次真实出图测试均通过；浏览器登录与线上完整操作流程仍待权限问题解决后验收。
 
-商户凭据尚未提供；`PAYMENT_SALES_ENABLED=false`，不收款。源码当前保存在Sites托管源码库；按照用户要求，登录自检通过后再创建用户GitHub仓库并推送。Sites源码库不等于用户GitHub仓库。
+商户凭据尚未提供；`PAYMENT_SALES_ENABLED=false`，不收款。GitHub用于保存和维护源码，正式网站由Sites提供服务器、数据库、图片存储与登录服务。
 
 详细范围见 `docs/PRODUCT.md`，验收记录见 `docs/VALIDATION.md`。
 
@@ -50,6 +53,8 @@ npm run test:acceptance
 ## 发布
 
 项目标识保存在 `.openai/hosting.json`，不可重建项目覆盖。使用已安装Sites技能的 `site-workflow.mjs` 进行源码同步和打包，再保存版本及发布。不得把发布令牌、API密钥、商户私钥写入命令参数或源码。
+
+GitHub推送与Sites发布是两个步骤，目前没有配置自动部署。更新时需要推送源码并在Sites发布对应提交；具体说明见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。这个应用依赖服务器、D1和R2，不能直接用GitHub Pages承载全部功能。
 
 ## 素材与许可
 
