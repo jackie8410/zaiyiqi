@@ -39,10 +39,13 @@ npm run dev -- --hostname 127.0.0.1
 ```powershell
 npm run typecheck
 npm run test:business
+npm run test:exports
 npm run test:acceptance
 ```
 
 接口验收要求本地开发服务器运行，严格限制到loopback；只创建/删除自己的临时测试记录。支付测试使用内存数据库及临时密钥，不向支付平台发送请求。
+
+导出测试覆盖照片请求失败、传输中断、文件读取失败/取消，以及失败后重新导出；它不发起外部请求，也不代替浏览器中的实际下载验收。
 
 ## 外部配置
 

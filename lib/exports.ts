@@ -1,6 +1,18 @@
 import {type Album,type Photo,saveFile,safeName} from './client';
 async function image(url:string){const blob=await(await fetch(url,{credentials:'same-origin'})).blob();return createImageBitmap(blob);}
-async function dataURL(url:string){const r=await fetch(url,{credentials:'same-origin'});if(!r.ok)throw new Error('照片下载失败，请重试');return new Promise<string>(async(resolve,reject)=>{const f=new FileReader();f.onload=()=>resolve(String(f.result));f.onerror=reject;f.readAsDataURL(await r.blob());});}
+async function dataURL(url:string){
+ const r=await fetch(url,{credentials:'same-origin'});
+ if(!r.ok)throw new Error('照片下载失败，请重试');
+ let blob:Blob;
+ try{blob=await r.blob();}catch{throw new Error('照片传输中断，请重新下载相册');}
+ return new Promise<string>((resolve,reject)=>{
+  const f=new FileReader();
+  f.onload=()=>typeof f.result==='string'?resolve(f.result):reject(new Error('照片读取失败，请重新下载相册'));
+  f.onerror=()=>reject(new Error('照片读取失败，请重新下载相册'));
+  f.onabort=()=>reject(new Error('照片读取已中断，请重新下载相册'));
+  f.readAsDataURL(blob);
+ });
+}
 function lines(ctx:CanvasRenderingContext2D,value:string,x:number,y:number,max:number,size:number){let line='',offset=0;for(const c of value){if(ctx.measureText(line+c).width>max){ctx.fillText(line,x,y+offset);line='';offset+=size*1.5;}line+=c;}ctx.fillText(line,x,y+offset);}
 async function renderPage(album:Album,photos:Photo[],index:number){const c=document.createElement('canvas');c.width=1000;c.height=1340;const ctx=c.getContext('2d')!;const dark=['forest','film'].includes(album.theme);ctx.fillStyle=index===-1?(dark?'#314638':'#cbb594'):'#faf7f0';ctx.fillRect(0,0,1000,1340);ctx.fillStyle=index===-1&&dark?'#faf7f0':'#39372f';ctx.textAlign='center';if(index===-1){ctx.font='22px sans-serif';ctx.fillText('T O G E T H E R  ·  在一起',500,210);ctx.font='56px serif';lines(ctx,album.title,500,550,820,56);ctx.font='24px sans-serif';lines(ctx,album.subtitle||'每一页，都是想珍藏的瞬间。',500,810,800,24);}else{const page=album.pages[index];const p=photos.find(p=>p.id===page.photoId);if(p){const im=await image(p.url);const ratio=Math.min(860/im.width,900/im.height);ctx.drawImage(im,500-im.width*ratio/2,600-im.height*ratio/2,im.width*ratio,im.height*ratio);im.close();ctx.font='25px sans-serif';lines(ctx,page.caption||'留住这一刻',500,1120,800,25);ctx.font='17px sans-serif';ctx.fillText(`${index+1} / ${album.pages.length}${p.kind==='ai'?' · AI生成合成内容':''}`,500,1280);}}return c;}
 export async function exportPDF(album:Album,photos:Photo[],progress:(v:string)=>void){const {jsPDF}=await import('jspdf');const doc=new jsPDF({orientation:'portrait',unit:'px',format:[1000,1340],compress:true});for(let i=-1;i<album.pages.length;i++){progress(`正在导出 ${i+2}/${album.pages.length+1} 页`);if(i>=0)doc.addPage([1000,1340]);const canvas=await renderPage(album,photos,i);doc.addImage(canvas.toDataURL('image/jpeg',.88),'JPEG',0,0,1000,1340);canvas.width=0;}doc.save(safeName(album.title)+'.pdf');}
