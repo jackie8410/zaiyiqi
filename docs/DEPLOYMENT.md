@@ -2,44 +2,43 @@
 
 | 用途 | 地址 |
 | --- | --- |
-| 用户访问网站 | https://zaiyiqi-album.steelylinen1.chatgpt.site |
-| GitHub源码 | https://github.com/jackie8410/zaiyiqi |
+| GitHub Pages 用户主页 | https://album.learnforeverything.com/ |
+| 邮箱注册、登录、审核 | https://album.learnforeverything.com/account/ |
+| 同站后台 API | https://album-api.learnforeverything.com |
+| GitHub 源码 | https://github.com/jackie8410/zaiyiqi |
+| 种毛衣网站入口 | https://learnforeverything.com/ |
 
-网站标题为“在一起”，GitHub仓库路径为`zaiyiqi`。
+## 部署结构
 
-## 当前部署方式
+GitHub Pages 发布完整 React 界面，包括照片池、AI 创作表单、相册、翻页、下载、分享和账户审核。Pages 构建使用 vite.pages.config.ts，输出为 dist-pages；与后台 dist/server 分开。/account/ 和 /privacy/ 各有真实 HTML 文件，分享使用 /?album=令牌，直接访问和刷新不依赖服务器路由回退。
 
-GitHub保存源码；Sites发布Cloudflare Worker，并提供D1数据库、R2照片存储。普通用户通过本站邮箱验证码与审核流程登录；Sites托管身份仅用于关联旧版账号。既有项目的身份保存在`.openai/hosting.json`中。维护这个网站时保留项目身份，复用既有数据库和存储。
+Pages 不运行数据库、邮箱发信或图像 API。既有 Sites 项目运行 Cloudflare Worker，继续使用原 D1 数据库与 R2 存储；.openai/hosting.json 中的项目身份和绑定保持不变。后台自定义域名为 album-api.learnforeverything.com。前端与 API 同属 learnforeverything.com，邮箱会话使用后台域名的 HttpOnly、Secure、SameSite=Lax cookie；请求带 credentials，后台仅允许 FRONTEND_URL 的精确来源和自身来源，不使用通配 CORS。
 
-GitHub Pages只能托管静态资源，不能直接运行本项目的登录、私密照片、AI生成、数据库和支付服务。本项目没有启用GitHub Pages，也没有配置“推送即部署”的自动工作流。
+## DNS 与 Pages 设置
+
+GitHub 仓库 Settings → Pages 的 Source 为 GitHub Actions，Custom domain 为 album.learnforeverything.com；HTTPS 证书可用后启用 Enforce HTTPS。
+
+DNSPod 中 album CNAME 指向 jackie8410.github.io.。album-api CNAME 指向 Sites 返回的 custom-domains.chatgpt.site.；所有权与证书验证 TXT 以 Sites 原生接口实际返回值为准。不得修改根域名、www 或邮件记录来迁移相册。
 
 ## 更新流程
 
-1. 从最新源码继续修改。涉及应用行为时，运行对应类型检查、业务测试和接口验收。
-2. 使用当前Sites技能的`site-workflow.mjs`打开既有项目。临时源码凭据只能经隐藏标准输入传入。
-3. 通过该工作流构建、提交并同步Sites源码库，生成与提交一致的部署包。
-4. 将同一源码树同步至此GitHub仓库的`main`分支；已有内容时先核对远端，避免覆盖他人提交。公开仓库通过`codex/email-accounts-public`工作树发布干净提交，Sites维护历史与公开提交编号可不同，但必须核对Git源码树哈希完全一致。本机`.projects`、`.env*`、凭据及构建输出不得进入公开仓库或其提交历史。
-5. 用Sites原生工具保存该提交的版本并部署。确认部署状态为`succeeded`，核对生产环境修订与正式URL。
-6. 在权限允许时进行真实登录、上传、AI任务、相册展示、导出和分享测试。接口或发布检查不能代替完整浏览器验收。
+1. 使用 Sites 的 site-workflow.mjs 打开现有项目，保留项目身份、数据和已有环境变量。源码凭据仅经隐藏标准输入传入。
+2. 修改后运行 npm run typecheck、对应测试和 npm run build:pages。Pages 只编译固定的公开 API 地址，禁止注入服务端密钥。
+3. 通过 Sites 工作流构建后台、提交并推送其源码库，生成与提交一致的部署包。用原生工具保存版本并部署，确认 succeeded。
+4. 将同一源码树同步到 GitHub main。公开仓库使用 codex/email-accounts-public 工作树维护干净历史；Sites 与 GitHub 提交编号可不同，但源码树哈希必须完全一致。先获取并检查远端，不强制覆盖更新。
+5. GitHub Actions 的 pages.yml 在 main 更新后自动进行类型、认证、导出检查，再构建并发布 dist-pages。确认工作流成功后再切换外部入口。
+6. 对公开域名进行浏览器验证。发布成功、邮件送达或本地测试均不能代替实际注册、登录和作品操作验收。
 
-## 生产配置
+.projects、.env*、凭据、outputs 和构建产物不得进入公开提交历史。不要将 Sites 私有维护分支的完整历史直接推送到 GitHub。
 
-`OPENAI_API_KEY`存放于Sites保密运行时变量，`OPENAI_IMAGE_MODEL`为`gpt-image-2`。本地开发配置可放在已忽略的`.env.local`中。配置示例见仓库根目录`.env.example`，不要把真实密钥提交到Git或嵌入前端构建。
+## 运行时配置
 
-`PAYMENT_SALES_ENABLED=false`。微信及支付宝商户参数、经营与售后信息及真实支付联调尚未完成，因此当前不收款。运行时变量更新后，需要重新部署以使正式网站加载新配置。
+FRONTEND_URL 与 SITE_URL 为 https://album.learnforeverything.com；API_URL 为 https://album-api.learnforeverything.com。支付返回页面使用 SITE_URL，支付回调使用 API_URL。修改运行时变量后必须重新部署。
 
-## 验收记录
+OPENAI_API_KEY、AUTH_SECRET、RESEND_API_KEY 等仅存放在 Sites 保密运行时变量。图像模型为 gpt-image-2。PAYMENT_SALES_ENABLED=false，商户参数与真实支付联调完成前不收款。
 
-当前已完成的检查和未完成项目见[VALIDATION.md](VALIDATION.md)。生产浏览器测试存在应用权限层阻断，解除后继续验收；不应把部署成功或源码推送成功标记为所有功能均已通过。
+邮箱身份为唯一公开账户方式。所有者使用配置的 ADMIN_EMAIL 验证注册后进入审核后台；其他邮箱注册后等待所有者批准。已移除 ChatGPT 旧账号关联入口、接口及自动身份回退，不自动合并或删除数据库中的既有记录。手机号入口仍明确标注为未开放。
 
-## 邮箱账户
+发信域名 auth.learnforeverything.com 已通过 Resend 验证，发件人为“在一起 <no-reply@auth.learnforeverything.com>”。使用免费邮件服务，不启用付费套餐或自动充值；邮箱发送失败不会返回可用的假验证码。
 
-保持原Sites项目、DB与BUCKET不变。发布时由平台应用0001_email_accounts加法迁移，不运行初始迁移、不更改现有owner或额度。
-
-生产配置 AUTH_SECRET（32字节以上随机值）、RESEND_API_KEY、AUTH_EMAIL_FROM（已验证发信域名）、可选AUTH_EMAIL_REPLY_TO和AUTH_MAIL_DAILY_LIMIT。所有凭据仅使用Sites秘密变量。ADMIN_EMAIL只配置网站所有者邮箱；其邮箱验证通过后可访问/account中的审核后台。
-
-旧版账号应先从/account的“我在旧版已有照片和相册”关联一次，再改用邮箱验证码登录。若该邮箱已经先注册为另一独立账号，系统拒绝自动合并；原数据不动，需管理员核对，避免覆盖或错绑。
-
-手机号入口为明确标注的未开放状态，不发短信。邮箱服务未配置时接口返回503，界面提示尚未开通，不返回假验证码。
-
-已在DNSPod添加并验证`auth.learnforeverything.com`的DKIM、MX、SPF与发信CNAME记录，免费发信服务为Resend Free。正式发件人为`在一起 <no-reply@auth.learnforeverything.com>`，回复地址为所有者提供的网易邮箱。未开通付费邮件套餐或自动充值。
+当前验收情况见 [VALIDATION.md](VALIDATION.md)。

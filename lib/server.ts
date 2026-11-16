@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import {resolveAccount} from './account-auth';
+import {allowedOrigin} from './cors';
 export const bindings=()=>env as unknown as Record<string,any>;
 export const db=()=>{const v=bindings().DB as D1Database;if(!v)throw new HttpError('数据库暂未连接，请稍后再试',503);return v;};
 export const bucket=()=>{const v=bindings().BUCKET as R2Bucket;if(!v)throw new HttpError('照片存储暂未连接',503);return v;};
@@ -10,7 +11,7 @@ export const json=(data:unknown,status=200)=>Response.json(data,{status,headers:
 export async function currentUser(required=true,request?:Request){const u=await resolveAccount(request);if(!u){if(required)throw new HttpError('请先登录后继续',401);return null;}if(u.status!=='approved'){if(required)throw new HttpError(u.status==='pending'?'账号尚待审核，请在账户页面查看进度':'账号暂未开通，请联系网站所有者',403);return null;}return u;}
 export async function body(request:Request){try{return await request.json() as any;}catch{throw new HttpError('请求格式不正确');}}
 export const text=(v:unknown,max=500,fallback='')=>typeof v==='string'?v.trim().slice(0,max):fallback;
-export function sameOrigin(request:Request){const origin=request.headers.get('origin');if(!origin||origin!==new URL(request.url).origin)throw new HttpError('请求来源校验失败',403);}
+export function sameOrigin(request:Request){if(!allowedOrigin(request))throw new HttpError('请求来源校验失败',403);}
 export async function owned(table:'photos'|'albums'|'jobs'|'orders',id:string,owner:string){const row:any=await db().prepare(`SELECT * FROM ${table} WHERE id=? AND owner=?`).bind(id,owner).first();if(!row)throw new HttpError('内容不存在或你没有访问权限',404);return row;}
 export async function rateLimit(id:string,max=15,seconds=60){const expiry=now()+seconds*1000;await db().prepare('INSERT INTO rate_limits (id,count,expires) VALUES (?,1,?) ON CONFLICT(id) DO UPDATE SET count=CASE WHEN expires<? THEN 1 ELSE count+1 END,expires=CASE WHEN expires<? THEN excluded.expires ELSE expires END').bind(id,expiry,now(),now()).run();const r:any=await db().prepare('SELECT count FROM rate_limits WHERE id=?').bind(id).first();if(r.count>max)throw new HttpError('操作较频繁，请稍后再试',429);}
 export async function hash(v:string){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v));return Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');}

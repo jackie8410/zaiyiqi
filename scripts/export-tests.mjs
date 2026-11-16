@@ -8,7 +8,9 @@ const moduleURL = source => 'data:text/javascript;base64,' + Buffer.from(source)
 const transpile = source => ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText;
-const client = moduleURL(transpile(await readFile('lib/client.ts', 'utf8')));
+const browserURLs = moduleURL(transpile(await readFile('lib/browser-urls.ts', 'utf8')));
+const client = moduleURL(transpile(await readFile('lib/client.ts', 'utf8'))
+  .replace(/(['"])\.\/browser-urls\1/, JSON.stringify(browserURLs)));
 const rawModule = async filename => moduleURL('export default ' + JSON.stringify(await readFile(require.resolve(filename), 'utf8')));
 const engine = await rawModule('page-flip/dist/js/page-flip.browser.js');
 const license = await rawModule('page-flip/LICENSE');
@@ -31,7 +33,8 @@ const saved = {
 };
 const blobs = new Map();
 process.on('unhandledRejection', onUnhandled);
-globalThis.fetch = async () => {
+globalThis.fetch = async (_url, options) => {
+  assert.equal(options?.credentials, 'include', 'Private photo exports include the same-site API session');
   if (fetchMode === 'network-error') throw new Error('Simulated network failure');
   return {
     ok: fetchMode !== 'http-error',

@@ -1,10 +1,8 @@
-import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {bindings,db,HttpError,now,uid,hash,cookie,rateLimit,text} from './server';
 import {emailReady,sendVerificationEmail} from './email';
 
 export type AccountStatus='pending'|'approved'|'rejected'|'suspended';
 export const SESSION_COOKIE='zaiyiqi_session';
-export const LEGACY_OFF_COOKIE='zaiyiqi_legacy_off';
 const SESSION_AGE=7*86400;
 const CODE_AGE=10*60*1000;
 export function normalizeEmail(value:unknown){
@@ -25,24 +23,8 @@ export async function resolveAccount(request?:Request):Promise<any>{
   const session:any=await db().prepare('SELECT user_id FROM account_sessions WHERE token_hash=? AND expires>?').bind(await hash(token),now()).first();
   return session?accountByUser(session.user_id):null;
  }
- if(request&&cookie(request,LEGACY_OFF_COOKIE)==='1')return null;
- return resolveLegacyAccount();
+ return null;
 }
-export async function resolveLegacyAccount():Promise<any>{
- const legacy=await getChatGPTUser();
- if(!legacy)return null;
- const old:any=await db().prepare('SELECT * FROM users WHERE id=?').bind(legacy.userId).first();
- // No new public accounts through ChatGPT; this is only an existing-account bridge.
- if(!old)return null;
- const linked=await accountByUser(old.id);
- if(linked)return linked;
- const email=normalizeEmail(legacy.email);
- const collision:any=await db().prepare('SELECT user_id FROM email_accounts WHERE email=?').bind(email).first();
- if(collision&&collision.user_id!==old.id)throw new HttpError('此邮箱已有独立账号，请联系管理员核对原账号关联；原作品和额度仍保留',409);
- await db().prepare("INSERT OR IGNORE INTO email_accounts(user_id,email,status,verified_at,reviewed_at,created) VALUES(?,?,'approved',?,?,?)").bind(old.id,email,now(),now(),now()).run();
- return accountByUser(old.id);
-}
-
 async function codeHash(id:string,code:string){
  const secret=String(bindings().AUTH_SECRET||'');
  if(secret.length<32)throw new HttpError('邮箱登录正在配置，请稍后再试',503);
@@ -98,8 +80,6 @@ export async function verifyEmailCode(input:any){
  return {user,token};
 }
 export function sessionCookie(token:string,request:Request,clear=false){return `${SESSION_COOKIE}=${clear?'':token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${clear?0:SESSION_AGE}${new URL(request.url).protocol==='https:'?'; Secure':''}`;}
-export function legacyOffCookie(request:Request){return `${LEGACY_OFF_COOKIE}=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${new URL(request.url).protocol==='https:'?'; Secure':''}`;}
-export async function sessionForAccount(user:any){const token=uid()+uid();await db().prepare('INSERT INTO account_sessions(token_hash,user_id,expires,created) VALUES(?,?,?,?)').bind(await hash(token),user.id,now()+SESSION_AGE*1000,now()).run();return token;}
 export async function logoutAccount(request:Request){const token=cookie(request,SESSION_COOKIE);if(token)await db().prepare('DELETE FROM account_sessions WHERE token_hash=?').bind(await hash(token)).run();}
 export async function reviewAccounts(actor:any,input:any){
  if(!actor?.admin||actor.status!=='approved')throw new HttpError('没有审核权限',403);

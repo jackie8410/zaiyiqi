@@ -17,7 +17,7 @@ ok(original===JSON.stringify(['users','photos','albums'].map(t=>database.prepare
 const adapter={prepare(sql){return {values:[],bind(...args){this.values=args;return this;},async first(){return database.prepare(sql).get(...this.values)||null;},async all(){return {results:database.prepare(sql).all(...this.values)};},async run(){const r=database.prepare(sql).run(...this.values);return {success:true,meta:{changes:r.changes}};}};},async batch(list){database.exec('BEGIN');try{const results=[];for(const s of list)results.push(await s.run());database.exec('COMMIT');return results;}catch(e){database.exec('ROLLBACK');throw e;}}};
 const objects=new Map([['old/photo',new Uint8Array(12)]]);
 const bucket={async put(key,bytes){objects.set(key,new Uint8Array(bytes));},async get(key){const b=objects.get(key);return b?{body:b,size:b.length}:null;},async delete(key){objects.delete(key);}};
-const env={DB:adapter,BUCKET:bucket,ADMIN_EMAIL:'owner@example.test',AUTH_SECRET:randomBytes(32).toString('hex'),RESEND_API_KEY:'test-secret-not-real',AUTH_EMAIL_FROM:'在一起 <test@example.test>',PAYMENT_SALES_ENABLED:'false'};
+const env={DB:adapter,BUCKET:bucket,ADMIN_EMAIL:'owner@example.test',AUTH_SECRET:randomBytes(32).toString('hex'),RESEND_API_KEY:'test-secret-not-real',AUTH_EMAIL_FROM:'在一起 <test@example.test>',PAYMENT_SALES_ENABLED:'false',FRONTEND_URL:'https://album.learnforeverything.com'};
 let currentHeaders=new Headers(),mailFails=false;const mail=[];
 const oldFetch=globalThis.fetch;
 globalThis.fetch=async(url,options)=>{assert.equal(url,'https://api.resend.com/emails');const data=JSON.parse(options.body);if(mailFails)return Response.json({error:'simulated outage'},{status:503});mail.push(data);return Response.json({id:crypto.randomUUID()});};
@@ -36,10 +36,26 @@ async function expect(group,path,status,method='GET',body,session='',extra={}){c
 function freshLimits(){database.exec('DELETE FROM rate_limits');}
 async function send(email,purpose='register'){freshLimits();const r=await expect('auth','request-code',200,'POST',{email,purpose,name:'测试用户',application:'使用虚构人物体验相册'});const result=await r.json();ok(!JSON.stringify(result).includes(mail.at(-1).text.match(/验证码：(\d{6})/)[1]),'never returns OTP in response');return {...result,code:mail.at(-1).text.match(/验证码：(\d{6})/)[1]};}
 try{
- const ownerResponse=await expect('auth','legacy-link',200,'POST',{},'',legacy);const owner=cookies(ownerResponse);
- ok((await ownerResponse.json()).account.id==='legacy-owner','legacy linking retains stable user ID');
- ok(database.prepare("SELECT credits FROM users WHERE id='legacy-owner'").get().credits===17,'link does not grant or reset credits');
- const oldState=await(await expect('v1','state',200,'GET',undefined,owner)).json();ok(oldState.photos[0].id==='original-photo'&&oldState.albums[0].id==='original-album','legacy photos and albums remain accessible');
+ await expect('auth','legacy-link',404,'POST',{},'',legacy);
+ ok((await(await expect('auth','status',200,'GET',undefined,'',legacy)).json()).account===null,'platform identity alone never logs in');
+ const ownerChallenge=await send('owner@example.test');
+ const ownerResponse=await expect('auth','verify',200,'POST',ownerChallenge);const owner=cookies(ownerResponse),ownerAccount=(await ownerResponse.json()).account;
+ ok(ownerAccount.admin&&ownerAccount.status==='approved','verified configured owner receives review access');
+ ok(database.prepare("SELECT credits FROM users WHERE id='legacy-owner'").get().credits===17,'removing legacy linking leaves old credits untouched');
+ const oldState=await(await expect('v1','state',200,'GET',undefined,owner)).json();ok(oldState.photos.length===0&&oldState.albums.length===0,'new owner email account cannot silently claim old data');
+ const frontend=env.FRONTEND_URL;
+ const preflight=await expect('auth','verify',204,'OPTIONS',undefined,'',{Origin:frontend,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type'});
+ ok(preflight.headers.get('Access-Control-Allow-Origin')===frontend&&preflight.headers.get('Access-Control-Allow-Credentials')==='true','Pages preflight allows exact frontend and credentials');
+ await expect('auth','status',403,'GET',undefined,'',{Origin:frontend+'.attacker.test'});
+ await expect('auth','verify',403,'OPTIONS',undefined,'',{Origin:'null','Access-Control-Request-Method':'POST'});
+ await expect('auth','verify',403,'OPTIONS',undefined,'',{Origin:'https://other.learnforeverything.com','Access-Control-Request-Method':'POST'});
+ await expect('v1','profile',405,'OPTIONS',undefined,'',{Origin:frontend,'Access-Control-Request-Method':'TRACE'});
+ const crossState=await expect('auth','status',200,'GET',undefined,owner,{Origin:frontend});
+ ok((await crossState.json()).account.id===ownerAccount.id&&crossState.headers.get('Vary').includes('Origin'),'email session works from Pages frontend');
+ const crossVerifyChallenge=await send('owner@example.test','login');
+ const crossVerify=await expect('auth','verify',200,'POST',crossVerifyChallenge,'',{Origin:frontend});
+ ok(crossVerify.headers.getSetCookie().length===1&&crossVerify.headers.getSetCookie()[0].includes('HttpOnly'),'CORS retains the secure session cookie');
+ await expect('v1','profile',200,'PATCH',{name:'网站所有者'},owner,{Origin:frontend});
  await expect('auth','request-code',403,'POST',{email:'visitor@example.test'},'',{Origin:'https://attacker.example.test'});
  await expect('auth','request-code',400,'POST',{email:'bad\r\nBcc:victim@example.test',purpose:'register',name:'test',application:'test'});
  const challenge=await send('NEW@example.test');
@@ -57,7 +73,8 @@ try{
  const approved=await(await expect('v1','state',200,'GET',undefined,member)).json();ok(approved.user.id===newAccount.id&&approved.user.credits===2,'approval takes effect without resetting credits or requiring OAuth');
  const form=new FormData();form.append('file',new File([await readFile('public/images/family.png')],'fictional-family.png',{type:'image/png'}));form.append('ai','true');
  const photo=(await(await expect('v1','photos',201,'POST',form,member)).json()).id;
- await expect('v1','photos/'+photo,200,'GET',undefined,member);
+ const imageResponse=await expect('v1','photos/'+photo,200,'GET',undefined,member,{Origin:frontend});
+ ok(imageResponse.headers.get('Access-Control-Allow-Origin')===frontend&&(await imageResponse.arrayBuffer()).byteLength>0,'authenticated image bytes and CORS survive response wrapping');
  await expect('v1','photos/'+photo,404,'GET',undefined,owner);
  const made=(await(await expect('v1','albums',201,'POST',{title:'邮箱账号相册',subtitle:'虚构素材',theme:'linen',mode:'book',pages:[{photoId:photo,caption:'第一页'},{photoId:photo,caption:'第二页'}]},member)).json()).id;
  await expect('v1','exports/'+made,200,'POST',{format:'pdf'},member);
@@ -82,7 +99,7 @@ try{
  const limited=await send('limited@example.test');await expect('auth','request-code',429,'POST',{email:'limited@example.test',purpose:'login'});
  const countBefore=database.prepare('SELECT COUNT(*) AS n FROM email_codes').get().n;freshLimits();mailFails=true;await expect('auth','request-code',502,'POST',{email:'delivery@example.test',purpose:'login'});mailFails=false;ok(database.prepare('SELECT COUNT(*) AS n FROM email_codes').get().n<=countBefore,'failed delivery leaves no usable challenge');
  delete env.RESEND_API_KEY;await expect('auth','request-code',503,'POST',{email:'missing@example.test',purpose:'login'});env.RESEND_API_KEY='test-secret-not-real';
- await expect('auth','admin/accounts',400,'POST',{userId:'legacy-owner',status:'suspended'},owner);
+ await expect('auth','admin/accounts',400,'POST',{userId:ownerAccount.id,status:'suspended'},owner);
  ok(database.prepare('SELECT COUNT(*) AS n FROM account_reviews WHERE user_id=?').get(newAccount.id).n===3,'review history is auditable');
  ok(database.prepare("SELECT credits FROM users WHERE id='legacy-owner'").get().credits===17&&database.prepare("SELECT pages FROM albums WHERE id='original-album'").get().pages.includes('原页序'),'original account remains unchanged after whole workflow');
  console.log(JSON.stringify({success:true,checks,scope:'actual auth and album HTTP handlers, SQLite migrations, verified email simulation, approval, sessions, data ownership, share/export authorization; no real mail or browser'}));

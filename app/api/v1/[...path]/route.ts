@@ -1,3 +1,4 @@
+import {withCors} from '@/lib/cors';
 import { db,bucket,bindings,currentUser,body,text,owned,sameOrigin,uid,now,json,HttpError,rateLimit,hash,readableAlbum,photoDto,albumDto,jobDto } from '@/lib/server';
 import { validImage,MAX_ATTEMPTS,PRODUCTS } from '@/lib/prompts';
 import { createImage,imageReady } from '@/lib/image-provider';
@@ -115,4 +116,5 @@ async function handle(request:Request,context:Ctx){try{
  if(area==='admin'&&method==='GET'){if(!u.admin)throw new HttpError('没有管理权限',403);return json({ai:imageReady(),payments:paymentChannels(),configuration:['OPENAI_API_KEY','ARK_API_KEY','WECHAT_MCH_ID','WECHAT_PRIVATE_KEY','WECHAT_API_V3_KEY','WECHAT_PLATFORM_PUBLIC_KEY','ALIPAY_APP_ID','ALIPAY_PRIVATE_KEY','ALIPAY_PUBLIC_KEY'].map(key=>({key,configured:!!bindings()[key]}))});}
  throw new HttpError('接口不存在',404);
  }catch(e){return json({error:e instanceof HttpError?e.message:'操作暂未完成，请稍后再试。'},e instanceof HttpError?e.status:500);}}
-export const GET=handle;export const POST=handle;export const PATCH=handle;export const PUT=handle;export const DELETE=handle;
+const endpoint=withCors(handle);
+export const GET=endpoint;export const POST=endpoint;export const PATCH=endpoint;export const PUT=endpoint;export const DELETE=endpoint;export const OPTIONS=endpoint;

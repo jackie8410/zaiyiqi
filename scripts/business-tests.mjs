@@ -12,7 +12,7 @@ globalThis.__albumTest={bindings:()=>env,db:()=>adapter,HttpError,now:()=>Date.n
 const transpile=s=>ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
 const prompts='data:text/javascript;base64,'+Buffer.from(transpile(await readFile('lib/prompts.ts','utf8'))).toString('base64');
 const source=transpile(await readFile('lib/payments.ts','utf8')).replace(/import \{[^}]+\} from ['"]\.\/server['"];?/,'const {bindings,db,HttpError,now,uid}=globalThis.__albumTest;').replace(/['"]\.\/prompts['"]/,JSON.stringify(prompts));
-const {handleNotification,paymentChannels}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const {handleNotification,paymentChannels,createPayment}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const {creationPrompt,canRetry,validImage}=await import(prompts);
 let checks=0;const ok=(v,m)=>{assert.ok(v,m);checks++;};
 const order=(id,channel='alipay',amount=990,product='trial')=>database.prepare("INSERT INTO orders(id,owner,product,channel,amount,status,created) VALUES(?,?,?,?,?,'pending',?)").run(id,'test-owner',product,channel,amount,Date.now());
@@ -43,5 +43,10 @@ await reserveJobCredit('job-test','test-owner');ok(credits()===14,'reserve once 
 await refundJobCredit('job-test','test-owner');await refundJobCredit('job-test','test-owner');ok(credits()===15,'refund only once after technical failure');
 await reserveJobCredit('job-test','test-owner');database.prepare("UPDATE jobs SET updated=? WHERE id='job-test'").run(Date.now()-310000);
 await recoverStalledJobs('test-owner');await recoverStalledJobs('test-owner');ok(credits()===15,'recover abandoned request exactly once');ok(database.prepare("SELECT status FROM jobs WHERE id='job-test'").get().status==='failed','stalled task can retry');
+env.SITE_URL='https://album.learnforeverything.com';env.API_URL='https://album-api.learnforeverything.com';
+const payment=await createPayment({id:'test-split-origin',amount:990,name:'test',channel:'alipay'},new Request(env.API_URL));
+const params=new URL(payment.url).searchParams;
+ok(params.get('notify_url')===env.API_URL+'/api/v1/notify/alipay','payment callback stays on backend');
+ok(params.get('return_url')===env.SITE_URL+'/?payment=test-split-origin','payment return opens Pages frontend');
 console.log(JSON.stringify({success:true,checks,scope:'in-memory payment signature, amount, replay, atomic rollback, entitlement and prompt tests; no provider calls'}));
 database.close();delete globalThis.__albumTest;

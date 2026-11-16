@@ -1,13 +1,13 @@
 # 在一起 · 把美好装订成册
 
-中文自助照片创作与互动相册网站。React / Vinext / Cloudflare Workers + D1 + R2；邮箱验证码与人工审核账号；Sites 托管服务器及存储。
+中文自助照片创作与互动相册网站。React / Vinext / Cloudflare Workers + D1 + R2；GitHub Pages 发布界面；邮箱验证码与人工审核账号；Sites 托管服务器及存储。
 
-- 在线使用：[打开「在一起」](https://zaiyiqi-album.steelylinen1.chatgpt.site)
+- 在线使用：[打开「在一起」](https://album.learnforeverything.com)
 - 源码仓库：[jackie8410/zaiyiqi](https://github.com/jackie8410/zaiyiqi)
 
 ## 已实现
 
-- 邮箱验证注册、验证码登录、网站所有者审核、拒绝与停用；旧版账号关联保留原用户ID和数据。
+- 邮箱验证注册、验证码登录、网站所有者审核、拒绝与停用。
 
 - 单张照片衣着、背景、自然修饰的AI表单与服务接口；现有合影加人、全新合影、虚拟旅行。
 - 私密照片池，上传、筛选、多选、ZIP下载、单张删除与全部清除。
@@ -19,11 +19,11 @@
 
 ## 当前开通状态
 
-正式网址：[在一起](https://zaiyiqi-album.steelylinen1.chatgpt.site)。2026-11-10已将专用OpenAI密钥配置为线上保密变量，模型为`gpt-image-2`，重新部署成功。使用实际提供商与提示词代码的旅游换装、合影加人两次真实出图测试均通过；浏览器登录与线上完整操作流程仍待权限问题解决后验收。
+正式网址：[在一起](https://album.learnforeverything.com)。2026-11-10已将专用OpenAI密钥配置为线上保密变量，模型为`gpt-image-2`，重新部署成功。使用实际提供商与提示词代码的旅游换装、合影加人两次真实出图测试均通过；浏览器登录与线上完整操作流程仍待权限问题解决后验收。
 
-商户凭据尚未提供；`PAYMENT_SALES_ENABLED=false`，不收款。GitHub用于保存和维护源码，正式网站由Sites提供服务器、数据库和图片存储。普通用户使用独立邮箱账号；ChatGPT仅作为旧版账号关联入口。邮件服务须配置完成后才能发送真实验证码。
+商户凭据尚未提供；`PAYMENT_SALES_ENABLED=false`，不收款。GitHub Pages 发布完整界面，Sites 提供同一主域名下的后台 API、数据库和图片存储。普通用户使用邮箱验证码注册与登录；旧账号关联入口与接口已移除。邮件服务已接通。
 
-2026-11-17已发布邮箱验证码注册、登录和所有者审核功能。Resend Free免费邮件服务及发信子域名`auth.learnforeverything.com`已验证；线上密钥单独保密配置。独立域名入口位于[种毛衣首页](https://learnforeverything.com/)，账户入口为[/account](https://zaiyiqi-album.steelylinen1.chatgpt.site/account)。正式浏览器仍受工具访问权限阻断，完整操作验收尚未完成。
+2026-11-17已发布邮箱验证码注册、登录和所有者审核功能。Resend Free免费邮件服务及发信子域名`auth.learnforeverything.com`已验证；线上密钥单独保密配置。独立域名入口位于[种毛衣首页](https://learnforeverything.com/)，账户入口为[/account](https://album.learnforeverything.com/account/)。正式浏览器仍受工具访问权限阻断，完整操作验收尚未完成。
 
 详细范围见 `docs/PRODUCT.md`，验收记录见 `docs/VALIDATION.md`。
 
@@ -38,9 +38,10 @@ node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1
 npm run dev -- --hostname 127.0.0.1
 ```
 
-已有数据库不要重复执行初始迁移。生产迁移由Sites发布流程应用。便携本地预览登录使用 `local_seedy` 模拟身份；生产使用邮箱验证登录；旧版账号关联读取Sites可信身份。模拟身份不会包含在生产构建中。新增认证表需应用 drizzle/0001_email_accounts.sql，已有数据库不得重跑初始迁移。
+已有数据库不要重复执行初始迁移。生产迁移由Sites发布流程应用。本地和生产均使用邮箱会话；托管模拟身份不再授予作品访问权限。新增认证表需应用 drizzle/0001_email_accounts.sql，已有数据库不得重跑初始迁移。
 
 ```powershell
+npm run build:pages
 npm run typecheck
 npm run test:business
 npm run test:exports

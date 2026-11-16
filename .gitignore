@@ -58,3 +58,5 @@ yarn-error.log*
 
 # Local provisioning metadata stays outside both source remotes.
 /[.]projects/
+
+/dist-pages/

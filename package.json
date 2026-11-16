@@ -16,7 +16,8 @@
     "test:business": "node scripts/business-tests.mjs",
     "test:exports": "node scripts/export-tests.mjs",
     "test:auth": "node scripts/auth-tests.mjs",
-    "test:acceptance": "node scripts/acceptance.mjs"
+    "test:acceptance": "node scripts/acceptance.mjs",
+    "build:pages": "vite build --config vite.pages.config.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
