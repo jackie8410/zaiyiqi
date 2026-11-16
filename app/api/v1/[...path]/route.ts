@@ -10,7 +10,7 @@ async function handle(request:Request,context:Ctx){try{
  if(area==='notify'&&method==='POST')return handleNotification(id,request);
  if(method!=='GET')sameOrigin(request);
  if(area==='state'&&method==='GET'){
-  const u=await currentUser(false);const config={ai:imageReady(),payments:bindings().PAYMENT_SALES_ENABLED==='true'?paymentChannels():[],products:PRODUCTS};
+  const u=await currentUser(false,request);const config={ai:imageReady(),payments:bindings().PAYMENT_SALES_ENABLED==='true'?paymentChannels():[],products:PRODUCTS};
   if(!u)return json({user:null,photos:[],albums:[],jobs:[],config});
   await recoverStalledJobs(u.id);const balance:any=await db().prepare('SELECT credits FROM users WHERE id=?').bind(u.id).first();u.credits=balance.credits;
   const [p,a,j]=await Promise.all([db().prepare('SELECT * FROM photos WHERE owner=? ORDER BY created DESC').bind(u.id).all(),db().prepare('SELECT * FROM albums WHERE owner=? ORDER BY updated DESC').bind(u.id).all(),db().prepare('SELECT * FROM jobs WHERE owner=? ORDER BY created DESC LIMIT 30').bind(u.id).all()]);
@@ -30,11 +30,11 @@ async function handle(request:Request,context:Ctx){try{
   if(method==='GET'){
    const pages=JSON.parse(a.pages);const rows=await db().prepare('SELECT * FROM photos WHERE owner=?').bind(a.owner).all();const used=new Set(pages.map((p:any)=>p.photoId));const ps=rows.results.filter((p:any)=>used.has(p.id)).map((p:any)=>({...photoDto(p),url:`/api/v1/photos/${p.id}?share=${id}`}));
    const [cs,ls,owner]=await Promise.all([db().prepare('SELECT id,name,body,created,owner FROM comments WHERE album_id=? ORDER BY created DESC LIMIT 100').bind(a.id).all(),db().prepare('SELECT COUNT(*) AS n FROM likes WHERE album_id=?').bind(a.id).first(),db().prepare('SELECT name FROM users WHERE id=?').bind(a.owner).first()]);
-   const u=await currentUser(false);const liked=u?await db().prepare('SELECT id FROM likes WHERE id=?').bind(a.id+':'+u.id).first():false;
+   const u=await currentUser(false,request);const liked=u?await db().prepare('SELECT id FROM likes WHERE id=?').bind(a.id+':'+u.id).first():false;
    const stats:any=await db().prepare('SELECT AVG(score) AS rating,COUNT(*) AS n FROM ratings WHERE album_id=?').bind(a.id).first();const mine:any=u?await db().prepare('SELECT score FROM ratings WHERE id=?').bind(a.id+':'+u.id).first():null;
    return json({album:albumDto(a),photos:ps,comments:cs.results.map((c:any)=>({id:c.id,name:c.name,body:c.body,created:c.created,canDelete:!!u&&(u.id===c.owner||u.id===a.owner||u.admin)})),likes:(ls as any)?.n||0,liked:!!liked,rating:stats?.rating||0,ratingCount:stats?.n||0,myRating:mine?.score||0,author:(owner as any)?.name||'相册主人',user:u?{name:u.name,id:u.id}:null});
   }
-  const u=(await currentUser())!;await rateLimit('social:'+u.id,10,60);
+  const u=(await currentUser(true,request))!;await rateLimit('social:'+u.id,10,60);
   if(action==='like'&&method==='POST'){const key=a.id+':'+u.id;const existing=await db().prepare('SELECT id FROM likes WHERE id=?').bind(key).first();if(existing)await db().prepare('DELETE FROM likes WHERE id=?').bind(key).run();else await db().prepare('INSERT INTO likes(id,album_id,owner) VALUES(?,?,?)').bind(key,a.id,u.id).run();return json({ok:true});}
   if(action==='rate'&&method==='POST'){const b=await body(request);if(!Number.isInteger(b.score)||b.score<1||b.score>5)throw new HttpError('请选择1至5星');await db().prepare('INSERT INTO ratings(id,album_id,owner,score) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET score=excluded.score').bind(a.id+':'+u.id,a.id,u.id,b.score).run();return json({ok:true});}
   if(action==='comments'&&method==='POST'){const b=await body(request);const value=text(b.body,500);if(!value)throw new HttpError('写下一句祝福再发送吧');await db().prepare('INSERT INTO comments(id,album_id,owner,name,body,created) VALUES(?,?,?,?,?,?)').bind(uid(),a.id,u.id,u.name,value,now()).run();return json({ok:true});}
@@ -42,11 +42,11 @@ async function handle(request:Request,context:Ctx){try{
  if(area==='photos'&&id&&method==='GET'){
   const p:any=await db().prepare('SELECT * FROM photos WHERE id=?').bind(id).first();if(!p)throw new HttpError('照片不存在',404);
   if(url.searchParams.get('share')){const a=await readableAlbum(request,url.searchParams.get('share')!);if(!JSON.parse(a.pages).some((s:any)=>s.photoId===id))throw new HttpError('无权访问这张照片',403);}
-  else{const u=(await currentUser())!;if(p.owner!==u.id)throw new HttpError('照片不存在',404);}
+  else{const u=(await currentUser(true,request))!;if(p.owner!==u.id)throw new HttpError('照片不存在',404);}
   const object=await bucket().get(p.object_key);if(!object)throw new HttpError('照片文件不存在',404);
   return new Response(object.body as BodyInit,{headers:{'Content-Type':p.mime,'Content-Length':String(object.size),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Disposition':url.searchParams.has('download')?`attachment; filename="photo-${id}.${p.mime==='image/png'?'png':p.mime==='image/webp'?'webp':'jpg'}"`:'inline'}});
  }
- const u=(await currentUser())!;
+ const u=(await currentUser(true,request))!;
  if(area==='profile'&&method==='PATCH'){const b=await body(request);const name=text(b.name,30);if(!name)throw new HttpError('昵称不能为空');await db().prepare('UPDATE users SET name=? WHERE id=?').bind(name,u.id).run();return json({ok:true});}
  if(area==='photos'&&method==='POST'){
   await rateLimit('upload:'+u.id,60,60);const count:any=await db().prepare('SELECT COUNT(*) AS n,COALESCE(SUM(size),0) AS bytes FROM photos WHERE owner=?').bind(u.id).first();if(count.n>=(u.pro?500:100)||count.bytes>(u.pro?2e9:3e8))throw new HttpError('照片池容量已满，请删除不需要的照片或升级',403);

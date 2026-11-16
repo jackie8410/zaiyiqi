@@ -28,13 +28,16 @@ yarn-error.log*
 
 # Local environment and keys
 .env*
-!.env.example
 .dev.vars*
 *.pem
 
 # Checkout-local tool state
 /.wrangler/
 /.sites-runtime/
+/.claude/
+/.cursor/
+/.cursorignore
+/CLAUDE.md
 
 # Workspace scaffolding and publication archives
 /.agents/
@@ -44,3 +47,14 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+
+.projects/cache
+.projects/vault
+.projects/state.test.json
+.projects/state.local.test.json
+.env
+.env.*
+!.env.example
+
+# Local provisioning metadata stays outside both source remotes.
+/[.]projects/

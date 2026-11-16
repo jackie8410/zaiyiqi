@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test:business": "node scripts/business-tests.mjs",
     "test:exports": "node scripts/export-tests.mjs",
+    "test:auth": "node scripts/auth-tests.mjs",
     "test:acceptance": "node scripts/acceptance.mjs"
   },
   "dependencies": {

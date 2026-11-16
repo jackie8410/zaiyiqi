@@ -5,4 +5,6 @@ export const MODES=[{id:'book',name:'仿真翻书'},{id:'fade',name:'柔和渐�
 export async function api(path:string,method='GET',value?:any):Promise<any>{const response=await fetch('/api/v1'+path,{method,headers:value instanceof FormData?undefined:value?{'Content-Type':'application/json'}:undefined,body:value instanceof FormData?value:value?JSON.stringify(value):undefined,credentials:'same-origin'});let data:any;try{data=await response.json();}catch{data={error:response.status===413?'照片过大，请使用20MB以内的文件':'服务暂时不可用，请稍后重试'};}if(!response.ok){const e=new Error(data.error||'操作失败') as any;e.status=response.status;e.data=data;throw e;}return data;}
 export function saveFile(blob:Blob,name:string){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 export const safeName=(name:string)=>name.replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').slice(0,60)||'在一起';
-export const login=()=>{window.location.href='/signin-with-chatgpt?return_to='+encodeURIComponent(window.location.pathname+window.location.search);};
+export const login=()=>{window.location.href='/account?returnTo='+encodeURIComponent(window.location.pathname+window.location.search);};
+
+export async function logout(){const r=await fetch('/api/auth/logout',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});if(!r.ok)throw new Error('退出未完成，请重试');window.location.href='/';}

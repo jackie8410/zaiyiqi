@@ -1,11 +1,13 @@
 # 在一起 · 把美好装订成册
 
-中文自助照片创作与互动相册网站。React / Vinext / Cloudflare Workers + D1 + R2；Sites 托管认证。
+中文自助照片创作与互动相册网站。React / Vinext / Cloudflare Workers + D1 + R2；邮箱验证码与人工审核账号；Sites 托管服务器及存储。
 
 - 在线使用：[打开「在一起」](https://zaiyiqi-album.steelylinen1.chatgpt.site)
 - 源码仓库：[jackie8410/zaiyiqi](https://github.com/jackie8410/zaiyiqi)
 
 ## 已实现
+
+- 邮箱验证注册、验证码登录、网站所有者审核、拒绝与停用；旧版账号关联保留原用户ID和数据。
 
 - 单张照片衣着、背景、自然修饰的AI表单与服务接口；现有合影加人、全新合影、虚拟旅行。
 - 私密照片池，上传、筛选、多选、ZIP下载、单张删除与全部清除。
@@ -19,7 +21,7 @@
 
 正式网址：[在一起](https://zaiyiqi-album.steelylinen1.chatgpt.site)。2026-11-10已将专用OpenAI密钥配置为线上保密变量，模型为`gpt-image-2`，重新部署成功。使用实际提供商与提示词代码的旅游换装、合影加人两次真实出图测试均通过；浏览器登录与线上完整操作流程仍待权限问题解决后验收。
 
-商户凭据尚未提供；`PAYMENT_SALES_ENABLED=false`，不收款。GitHub用于保存和维护源码，正式网站由Sites提供服务器、数据库、图片存储与登录服务。
+商户凭据尚未提供；`PAYMENT_SALES_ENABLED=false`，不收款。GitHub用于保存和维护源码，正式网站由Sites提供服务器、数据库和图片存储。普通用户使用独立邮箱账号；ChatGPT仅作为旧版账号关联入口。邮件服务须配置完成后才能发送真实验证码。
 
 详细范围见 `docs/PRODUCT.md`，验收记录见 `docs/VALIDATION.md`。
 
@@ -34,12 +36,13 @@ node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1
 npm run dev -- --hostname 127.0.0.1
 ```
 
-已有数据库不要重复执行初始迁移。生产迁移由Sites发布流程应用。便携本地预览登录使用 `local_seedy` 模拟身份；生产使用真实 ChatGPT 登录，模拟身份不会包含在生产构建中。
+已有数据库不要重复执行初始迁移。生产迁移由Sites发布流程应用。便携本地预览登录使用 `local_seedy` 模拟身份；生产使用邮箱验证登录；旧版账号关联读取Sites可信身份。模拟身份不会包含在生产构建中。新增认证表需应用 drizzle/0001_email_accounts.sql，已有数据库不得重跑初始迁移。
 
 ```powershell
 npm run typecheck
 npm run test:business
 npm run test:exports
+npm run test:auth
 npm run test:acceptance
 ```
 
@@ -51,7 +54,7 @@ npm run test:acceptance
 
 变量名称见 `.env.example`。所有真实密钥必须通过安全工具写入忽略的本地文件或Sites运行时秘密，不得提交Git。当前专用OpenAI密钥已按用户授权保存到忽略的`.env.local`和Sites生产保密变量；不要在部署脚本、前端代码、文档或公开构建产物中复制密钥。
 
-生产设置通过Sites原生环境变量工具管理；修改后需重新部署。`ADMIN_EMAIL` 仅用于管理员状态页；`SITE_URL` 用于商户回调地址。AI使用OpenAI图片编辑接口或已配置的火山引擎接口。商户全部参数与真实联调通过后，再决定启用销售开关。还需填写正式经营/客服/退款信息，首版不提供虚假的商户支付演示。
+生产设置通过Sites原生环境变量工具管理；修改后需重新部署。`ADMIN_EMAIL` 指定网站所有者的已验证邮箱（拥有审核权限），`AUTH_SECRET` 是32字节以上随机密钥；`RESEND_API_KEY` 和 `AUTH_EMAIL_FROM` 用于真实验证码发送。发信地址必须属于已验证域名，不能直接冒用网易等邮箱服务商域名。`AUTH_EMAIL_REPLY_TO` 可使用站长的联系邮箱。`AUTH_MAIL_DAILY_LIMIT` 限制每日发送请求；`SITE_URL` 用于商户回调地址。AI使用OpenAI图片编辑接口或已配置的火山引擎接口。商户全部参数与真实联调通过后，再决定启用销售开关。还需填写正式经营/客服/退款信息，首版不提供虚假的商户支付演示。
 
 ## 发布
 
@@ -69,4 +72,4 @@ GitHub推送与Sites发布是两个步骤，目前没有配置自动部署。更
 - 人物合成相似度和家属认可度，仍需用获授权的真实人物照片测试；已通过的两组API测试使用虚构人物示例。
 - 手机触控流畅度及离线HTML在手机文件管理器中的打开方式。
 - 微信/支付宝真实商户下单、回调及售后流程。
-- ChatGPT账户之外的手机号/微信登录不在当前托管首版内；面向中国大众市场需要后续迁移或补充身份渠道。
+- 邮件服务真实送达、邮箱注册审核与浏览器登录需独立验收；手机号入口仅预留，未接短信。
