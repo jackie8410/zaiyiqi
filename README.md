@@ -23,6 +23,8 @@
 
 商户凭据尚未提供；`PAYMENT_SALES_ENABLED=false`，不收款。GitHub用于保存和维护源码，正式网站由Sites提供服务器、数据库和图片存储。普通用户使用独立邮箱账号；ChatGPT仅作为旧版账号关联入口。邮件服务须配置完成后才能发送真实验证码。
 
+2026-11-17已发布邮箱验证码注册、登录和所有者审核功能。Resend Free免费邮件服务及发信子域名`auth.learnforeverything.com`已验证；线上密钥单独保密配置。独立域名入口位于[种毛衣首页](https://learnforeverything.com/)，账户入口为[/account](https://zaiyiqi-album.steelylinen1.chatgpt.site/account)。正式浏览器仍受工具访问权限阻断，完整操作验收尚未完成。
+
 详细范围见 `docs/PRODUCT.md`，验收记录见 `docs/VALIDATION.md`。
 
 ## 本地启动
@@ -43,8 +45,9 @@ npm run typecheck
 npm run test:business
 npm run test:exports
 npm run test:auth
-npm run test:acceptance
 ```
+
+`test:auth`运行实际认证与相册路由、SQLite迁移及对象存储测试，邮件由测试替身接收。历史`test:acceptance`脚本用于旧版模拟托管身份的本地HTTP环境，不能作为新版邮箱登录或正式浏览器验收的依据。
 
 接口验收要求本地开发服务器运行，严格限制到loopback；只创建/删除自己的临时测试记录。支付测试使用内存数据库及临时密钥，不向支付平台发送请求。
 
