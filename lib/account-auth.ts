@@ -49,11 +49,11 @@ export async function requestEmailCode(request:Request,input:any){
  await db().prepare('DELETE FROM email_codes WHERE expires<?').bind(created-86400000).run();
  await db().prepare('DELETE FROM account_sessions WHERE expires<?').bind(created).run();
  await db().prepare('INSERT INTO email_codes(id,email,code_hash,purpose,name,application,expires,created) VALUES(?,?,?,?,?,?,?,?)').bind(id,email,digest,purpose,name,application,created+CODE_AGE,created).run();
- try{await sendVerificationEmail(email,code,id);}catch{
+ try{await sendVerificationEmail(email,code,id,purpose,created);}catch{
   await db().prepare('DELETE FROM email_codes WHERE id=?').bind(id).run();
   throw new HttpError('验证码邮件暂未发送成功，请稍后重试或联系管理员',502);
  }
- return {challengeId:id,expiresIn:CODE_AGE/1000,resendAfter:60};
+ return {challengeId:id,expiresIn:CODE_AGE/1000,resendAfter:60,sentAt:created};
 }
 export async function verifyEmailCode(input:any){
  const id=text(input.challengeId,64),code=text(input.code,6);

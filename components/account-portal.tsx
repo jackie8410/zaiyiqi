@@ -8,7 +8,7 @@ async function call(path:string,method='GET',body?:unknown){const response=await
 function returnPath(){const p=new URLSearchParams(location.search).get('returnTo')||'/';if(!p.startsWith('/'))return '/';try{const target=new URL(p,location.origin);if(target.origin!==location.origin||/^\/(?:account|api|signin-with-chatgpt|signout-with-chatgpt|callback)(?:\/|$)/.test(target.pathname))return '/';return target.pathname+target.search+target.hash;}catch{return '/';}}
 export default function AccountPortal(){
  const [account,setAccount]=useState<Account|null>(null),[ready,setReady]=useState(false),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
- const [purpose,setPurpose]=useState<'login'|'register'>('login'),[email,setEmail]=useState(''),[name,setName]=useState(''),[application,setApplication]=useState(''),[challenge,setChallenge]=useState(''),[code,setCode]=useState(''),[remaining,setRemaining]=useState(0);
+ const [purpose,setPurpose]=useState<'login'|'register'>('login'),[email,setEmail]=useState(''),[name,setName]=useState(''),[application,setApplication]=useState(''),[challenge,setChallenge]=useState(''),[code,setCode]=useState(''),[remaining,setRemaining]=useState(0),[sentAt,setSentAt]=useState(0);
  const [filter,setFilter]=useState('pending'),[applications,setApplications]=useState<any[]>([]),[notes,setNotes]=useState<Record<string,string>>({});
  async function refresh(){const data=await call('status');setAccount(data.account);setReady(data.emailReady);return data.account;}
  async function loadApplications(status=filter){const data=await call('admin/accounts?status='+status);setApplications(data.accounts);}
@@ -16,7 +16,7 @@ export default function AccountPortal(){
  useEffect(()=>{if(!account?.admin)return;loadApplications().catch(e=>setMessage(e.message));},[account?.admin,filter]);
  useEffect(()=>{if(!remaining)return;const timer=setTimeout(()=>setRemaining(n=>Math.max(0,n-1)),1000);return()=>clearTimeout(timer);},[remaining]);
  async function run(fn:()=>Promise<void>){if(busy)return;setBusy(true);setMessage('');try{await fn();}catch(e:any){setMessage(e.message);}finally{setBusy(false);}}
- async function sendCode(){await run(async()=>{const result=await call('request-code','POST',{email,name,application,purpose});setChallenge(result.challengeId);setCode('');setRemaining(result.resendAfter);setMessage('验证码已发送，请查收邮件；如未收到，也请查看垃圾邮件。');});}
+ async function sendCode(){await run(async()=>{const result=await call('request-code','POST',{email,name,application,purpose});setChallenge(result.challengeId);setCode('');setRemaining(result.resendAfter);setSentAt(result.sentAt||Date.now());setMessage('验证码已发送。请查看标题中发送时间最新的一封；如未找到，请展开旧邮件会话，并检查垃圾邮件。');});}
  async function verify(){await run(async()=>{const result=await call('verify','POST',{challengeId:challenge,code});setAccount(result.account);setChallenge('');setCode('');setMessage(result.account.status==='pending'?'邮箱已验证，申请已提交，请等待网站所有者审核。':'邮箱验证成功。');});}
  async function review(id:string,status:string){await run(async()=>{await call('admin/accounts','POST',{userId:id,status,note:notes[id]||''});await loadApplications();setMessage('审核结果已保存。');});}
  return <main className="account-page"><header className="account-header"><a className="brand" href="/"><span className="brand-mark"><BookOpen size={24}/></span><span>在一起<small>TOGETHER</small></span></a><a className="text-button" href="/"><ArrowLeft size={16}/> 返回相册</a></header>
@@ -31,6 +31,7 @@ export default function AccountPortal(){
  <button className="button" disabled={busy} onClick={()=>run(async()=>{await call('logout','POST',{});setAccount(null);setApplications([]);setMessage('已退出登录。');})}><LogOut size={16}/> 退出登录</button></div>
  </>:<><div className="account-tabs" role="tablist" aria-label="登录或注册"><button role="tab" aria-selected={purpose==='login'} disabled={busy} onClick={()=>{setPurpose('login');setChallenge('');setMessage('');}}>邮箱登录</button><button role="tab" aria-selected={purpose==='register'} disabled={busy} onClick={()=>{setPurpose('register');setChallenge('');setMessage('');}}>申请注册</button><button disabled title="手机号注册尚未开放"><Smartphone size={14}/> 手机号 · 即将开放</button></div>
  <h2>{challenge?'输入邮箱验证码':purpose==='register'?'申请自己的创作空间':'欢迎回到在一起'}</h2><p className="body-copy">{challenge?`验证码已发送至 ${email}，10 分钟内有效。`:'使用邮件验证码登录，无需设置密码。'}</p>
+ {challenge&&sentAt>0&&<p className="footnote">本次发送：{new Date(sentAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})}（北京时间）。请核对邮件标题中的时间。</p>}
  {!ready&&<p role="status" className="account-note">邮箱服务正在接通，暂时无法发送验证码。</p>}
  <form onSubmit={e=>{e.preventDefault();challenge?verify():sendCode();}}>
  {!challenge?<><label className="field"><span>邮箱地址</span><input type="email" autoComplete="email" required maxLength={254} value={email} onChange={e=>setEmail(e.target.value)} placeholder="name@example.com"/></label>
