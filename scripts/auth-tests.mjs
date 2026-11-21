@@ -12,6 +12,7 @@ database.prepare('INSERT INTO photos(id,owner,object_key,name,mime,size,kind,cre
 database.prepare('INSERT INTO albums(id,owner,title,theme,mode,pages,created,updated) VALUES(?,?,?,?,?,?,?,?)').run('original-album','legacy-owner','原相册','linen','book','[{"photoId":"original-photo","caption":"原页序"}]',1,1);
 const original=JSON.stringify(['users','photos','albums'].map(t=>database.prepare('SELECT * FROM '+t).all()));
 database.exec(await readFile('drizzle/0001_email_accounts.sql','utf8'));
+database.exec(await readFile('drizzle/0002_admin_portability.sql','utf8'));
 let checks=0;const ok=(v,message)=>{assert.ok(v,message);checks++;};
 ok(original===JSON.stringify(['users','photos','albums'].map(t=>database.prepare('SELECT * FROM '+t).all())),'additive migration preserves all existing rows and credits');
 const adapter={prepare(sql){return {values:[],bind(...args){this.values=args;return this;},async first(){return database.prepare(sql).get(...this.values)||null;},async all(){return {results:database.prepare(sql).all(...this.values)};},async run(){const r=database.prepare(sql).run(...this.values);return {success:true,meta:{changes:r.changes}};}};},async batch(list){database.exec('BEGIN');try{const results=[];for(const s of list)results.push(await s.run());database.exec('COMMIT');return results;}catch(e){database.exec('ROLLBACK');throw e;}}};

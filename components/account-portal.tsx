@@ -1,8 +1,9 @@
 'use client';
-import {useEffect,useState} from 'react';
+import {lazy,Suspense,useEffect,useState} from 'react';
 import {apiUrl} from '@/lib/browser-urls';
 import {ArrowLeft,ArrowRight,BookOpen,Mail,ShieldCheck,Clock,LogOut,RefreshCw,LoaderCircle,Smartphone} from 'lucide-react';
 type Account={id:string;email:string;name:string;status:string;admin:boolean;reviewNote:string;credits:number};
+const AdminTools=lazy(()=>import('./admin-tools'));
 const labels:Record<string,string>={pending:'等待审核',approved:'已开通',rejected:'申请未通过',suspended:'账号已停用'};
 async function call(path:string,method='GET',body?:unknown){const response=await fetch(apiUrl('/api/auth/'+path),{method,credentials:'include',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});const data:any=await response.json();if(!response.ok)throw new Error(data.error||'请求未完成，请稍后再试');return data;}
 function returnPath(){const p=new URLSearchParams(location.search).get('returnTo')||'/';if(!p.startsWith('/'))return '/';try{const target=new URL(p,location.origin);if(target.origin!==location.origin||/^\/(?:account|api|signin-with-chatgpt|signout-with-chatgpt|callback)(?:\/|$)/.test(target.pathname))return '/';return target.pathname+target.search+target.hash;}catch{return '/';}}
@@ -42,5 +43,5 @@ export default function AccountPortal(){
  {account?.admin&&account.status==='approved'&&<section className="panel account-admin" aria-label="账号审核后台"><div className="account-admin-heading"><div><span className="eyebrow">OWNER DESK</span><h2>注册申请与账号管理</h2></div><label>筛选状态 <select aria-label="筛选审核状态" value={filter} onChange={e=>setFilter(e.target.value)}>{Object.entries(labels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><button className="button small" disabled={busy} onClick={()=>run(()=>loadApplications())}><RefreshCw size={15}/> 刷新</button></div>
  <p className="body-copy">批准后才可使用创作功能。拒绝或停用不会删除作品，也不会重置额度。每次操作均记录审核人和时间。</p>
  {applications.length?applications.map(item=><article className="application-row" key={item.id}><div><h3>{item.name}</h3><p className="account-email">{item.email}</p><small>{new Date(item.created).toLocaleString('zh-CN')}</small><p className="body-copy">{item.application||'未填写申请说明'}</p>{item.reviewNote&&<p className="footnote">上次说明：{item.reviewNote}</p>}</div><div><label className="field"><span>给申请人的说明（可选）</span><input aria-label={'审核说明 '+item.email} maxLength={300} value={notes[item.id]||''} onChange={e=>setNotes(v=>({...v,[item.id]:e.target.value}))}/></label><div className="account-actions">{item.id===account.id?<small>网站所有者</small>:<>{item.status!=='approved'&&<button className="button primary small" disabled={busy} onClick={()=>review(item.id,'approved')}>批准开通</button>}{item.status==='pending'&&<button className="button small" disabled={busy} onClick={()=>review(item.id,'rejected')}>拒绝申请</button>}{item.status==='approved'&&<button className="button small" disabled={busy} onClick={()=>review(item.id,'suspended')}>停用账号</button>}</>}</div></div></article>):<div className="account-empty">目前没有{labels[filter]}的账号。</div>}
- </section>}<footer className="site-footer"><span>在一起 · 把美好装订成册</span><a href="/privacy/">隐私与使用说明</a></footer></main>;
+ </section>}{account?.admin&&account.status==='approved'&&<Suspense fallback={<p role="status">正在读取管理工具…</p>}><AdminTools/></Suspense>}<footer className="site-footer"><span>在一起 · 把美好装订成册</span><a href="/privacy/">隐私与使用说明</a></footer></main>;
 }

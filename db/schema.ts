@@ -22,3 +22,19 @@ export const accountSessions=sqliteTable('account_sessions',{
 export const accountReviews=sqliteTable('account_reviews',{
  id:text('id').primaryKey(),userId:text('user_id').notNull(),actorId:text('actor_id').notNull(),previousStatus:text('previous_status').notNull(),status:text('status').notNull(),note:text('note').notNull(),created:integer('created').notNull()
 });
+// Additive administration tables: existing accounts, files and balances are untouched.
+export const siteSettings=sqliteTable('site_settings',{
+ id:text('id').primaryKey(),value:text('value').notNull(),revision:integer('revision').notNull(),updated:integer('updated').notNull(),actor:text('actor').notNull()
+});
+export const adminAudit=sqliteTable('admin_audit',{
+ id:text('id').primaryKey(),actor:text('actor').notNull(),action:text('action').notNull(),detail:text('detail').notNull(),created:integer('created').notNull()
+});
+export const maintenanceLock=sqliteTable('maintenance_lock',{
+ id:text('id').primaryKey(),operation:text('operation').notNull(),owner:text('owner').notNull(),expires:integer('expires').notNull()
+});
+export const writeLeases=sqliteTable('write_leases',{
+ id:text('id').primaryKey(),expires:integer('expires').notNull()
+});
+export const adminOperations=sqliteTable('admin_operations',{
+ id:text('id').primaryKey(),owner:text('owner').notNull(),kind:text('kind').notNull(),status:text('status').notNull(),created:integer('created').notNull(),expires:integer('expires').notNull()
+});

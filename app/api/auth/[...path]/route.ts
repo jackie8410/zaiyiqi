@@ -1,3 +1,4 @@
+import {withMaintenance} from '@/lib/maintenance';
 import {withCors} from '@/lib/cors';
 import {db,bindings,body,sameOrigin,json,HttpError,rateLimit,hash} from '@/lib/server';
 import {resolveAccount,publicAccount,requestEmailCode,verifyEmailCode,sessionCookie,logoutAccount,reviewAccounts} from '@/lib/account-auth';
@@ -34,7 +35,7 @@ async function handle(request:Request,context:Ctx){try{
  }
  throw new HttpError('接口不存在',404);
  }catch(e){if(e instanceof HttpError)return json({error:e.message},e.status);console.error('account request failed');return json({error:'账户服务暂时不可用，请稍后重试'},500);}}
-const endpoint=withCors(handle);
+const endpoint=withCors(withMaintenance(handle));
 export const GET=endpoint;
 export const POST=endpoint;
 export const OPTIONS=endpoint;

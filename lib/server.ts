@@ -1,9 +1,10 @@
 import { env } from 'cloudflare:workers';
 import {resolveAccount} from './account-auth';
 import {allowedOrigin} from './cors';
+import {storage} from './storage/runtime';
 export const bindings=()=>env as unknown as Record<string,any>;
-export const db=()=>{const v=bindings().DB as D1Database;if(!v)throw new HttpError('数据库暂未连接，请稍后再试',503);return v;};
-export const bucket=()=>{const v=bindings().BUCKET as R2Bucket;if(!v)throw new HttpError('照片存储暂未连接',503);return v;};
+export const db=()=>storage(bindings()).database;
+export const bucket=()=>storage(bindings()).files;
 export class HttpError extends Error {constructor(message:string,public status=400){super(message);}}
 export const uid=()=>crypto.randomUUID().replaceAll('-','');
 export const now=()=>Date.now();

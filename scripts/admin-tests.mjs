@@ -1,0 +1,167 @@
+// Real HTTP handlers + SQLite + filesystem storage. No production writes or model charges.
+import assert from 'node:assert/strict';
+import {readFile, mkdir, writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {randomBytes} from 'node:crypto';
+import {build} from 'esbuild';
+import JSZip from 'jszip';
+import {spawnSync} from 'node:child_process';
+import {createLocalStorage} from './storage-local.mjs';
+
+const testRoot = path.resolve('outputs/admin-tests-' + Date.now());
+await mkdir(testRoot, {recursive: true});
+const local = await createLocalStorage(path.join(testRoot, 'source'));
+const journal = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8'));
+for (const entry of journal.entries) local.connection.exec(await readFile('drizzle/' + entry.tag + '.sql', 'utf8'));
+const env = {DB: local.database, BUCKET: local.files, ADMIN_EMAIL: 'owner@example.test', OPENAI_API_KEY: 'fixture-only-secret', OPENAI_IMAGE_MODEL: 'gpt-image-2', AUTH_SECRET: randomBytes(32).toString('hex'), FRONTEND_URL: 'https://album.example.test', PAYMENT_SALES_ENABLED: 'false'};
+globalThis.__adminTest = {env};
+const built = await build({stdin: {contents: "export * as admin from './app/api/admin/[...path]/route.ts';export * as v1 from './app/api/v1/[...path]/route.ts';export * as auth from './app/api/auth/[...path]/route.ts';export * as format from './lib/backup-format.ts';export * as maintenance from './lib/maintenance.ts';export * as backup from './lib/admin-backup.ts';export * as provider from './lib/image-provider.ts';export * from './lib/restore-portable.ts';", resolveDir: process.cwd()}, bundle: true, write: false, platform: 'node', format: 'esm', target: 'es2022', logLevel: 'silent', plugins: [{name: 'platform', setup(b) {b.onResolve({filter: /^cloudflare:workers$/}, a => ({path: a.path, namespace: 'platform'})); b.onLoad({filter: /.*/, namespace: 'platform'}, () => ({contents: 'export const env=globalThis.__adminTest.env;'}));}}]});
+const {admin, v1, auth, format, maintenance, backup, provider, restoreToEmpty} = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].text).toString('base64'));
+let checks = 0; const ok = (value, message) => {assert.ok(value, message); checks++;};
+const database = local.connection, base = env.FRONTEND_URL;
+const ownerToken = randomBytes(32).toString('hex'), memberToken = randomBytes(32).toString('hex');
+const owner = 'zaiyiqi_session=' + ownerToken, member = 'zaiyiqi_session=' + memberToken;
+for (const [id, email, credits, token] of [['owner', 'owner@example.test', 37, ownerToken], ['member', 'member@example.test', 13, memberToken]]) {
+  database.prepare('INSERT INTO users(id,name,credits,pro_until,created) VALUES(?,?,?,?,?)').run(id, id, credits, 1800000000000, 1);
+  database.prepare("INSERT INTO email_accounts(user_id,email,status,application,review_note,verified_at,reviewed_at,reviewed_by,created) VALUES(?,?,'approved','fixture','approved',1,1,'owner',1)").run(id, email);
+  database.prepare('INSERT INTO account_sessions(token_hash,user_id,expires,created) VALUES(?,?,?,1)').run(await format.sha256(token), id, Date.now() + 86400000);
+}
+const png = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5h8AAAAASUVORK5CYII=', 'base64'));
+for (const [id, user, kind] of [['p1', 'owner', 'original'], ['p2', 'member', 'ai']]) {
+  await local.files.put(user + '/' + id, png, {httpMetadata: {contentType: 'image/png'}});
+  database.prepare('INSERT INTO photos(id,owner,object_key,name,mime,size,kind,created) VALUES(?,?,?,?,?,?,?,1)').run(id, user, user + '/' + id, id, 'image/png', png.length, kind);
+}
+database.prepare("INSERT INTO albums(id,owner,title,subtitle,theme,mode,pages,visibility,share_token,password_hash,revision,created,updated) VALUES('a1','owner','测试相册','保留文字','linen','book',?,'unlisted','test-share-token',NULL,7,1,2)").run(JSON.stringify([{photoId: 'p1', caption: '正面'}, {photoId: 'p1', caption: '背面'}]));
+database.exec("INSERT INTO account_reviews VALUES('review','member','owner','pending','approved','approved',1); INSERT INTO comments VALUES('comment','a1','member','member','留言',1); INSERT INTO likes VALUES('a1:member','a1','member'); INSERT INTO ratings VALUES('a1:member','a1','member',5); INSERT INTO orders VALUES('order','member','trial','alipay',990,'paid','transaction',1,2); INSERT INTO jobs VALUES('job','member','travel','{}','[]','[\"p2\"]',1,'complete',1,NULL,1,2)");
+async function request(group, route, method = 'GET', body, session = owner, extra = {}) {
+  const headers = {...extra}; if (session) headers.Cookie = session;
+  if (method !== 'GET' && !headers.Origin) headers.Origin = base;
+  if (body !== undefined) headers['Content-Type'] = body instanceof Uint8Array ? 'application/octet-stream' : 'application/json';
+  const req = new Request(`${base}/api/${group}/${route}`, {method, headers, body: body === undefined ? undefined : body instanceof Uint8Array ? body : JSON.stringify(body)});
+  return ({admin, v1, auth}[group])[method](req, {params: Promise.resolve({path: route.split('/')})});
+}
+async function expect(group, route, status, method = 'GET', body, session = owner, extra) {
+  const response = await request(group, route, method, body, session, extra);
+  assert.equal(response.status, status, `${group}/${route}: ${await response.clone().text()}`); checks++; return response;
+}
+const fetchOriginal = globalThis.fetch; let captured;
+globalThis.fetch = async (url, options) => {captured = {url, options}; return Response.json({data: [{b64_json: Buffer.from(png).toString('base64')}]});};
+let target;
+try {
+  await expect('admin', 'status', 401, 'GET', undefined, '');
+  await expect('admin', 'status', 403, 'GET', undefined, member);
+  await expect('admin', 'backup/start', 403, 'POST', {}, member);
+  await expect('admin', 'model', 403, 'PUT', {}, owner, {Origin: 'https://attacker.example.test'});
+  let model = await (await expect('admin', 'model', 200)).json();
+  ok(model.config.model === 'gpt-image-2' && model.config.quality === 'medium' && model.revision === 0, 'deployment keeps the effective model without a settings write');
+  ok(!JSON.stringify(model).includes(env.OPENAI_API_KEY), 'never returns secret values');
+  const conf = {kind: 'travel', mode: 'new', scene: 'fictional scene', outfit: '', placement: '', style: '', notes: '', preserveAge: true};
+  await provider.createImage([{bytes: png.buffer, mime: 'image/png'}], conf, '');
+  ok(captured.url === 'https://api.openai.com/v1/images/edits' && captured.options.body.get('model') === 'gpt-image-2' && captured.options.body.get('quality') === 'medium', 'default image request is unchanged');
+  model = await (await expect('admin', 'model', 200, 'PUT', {revision: 0, config: {...model.config, quality: 'high'}})).json();
+  await expect('admin', 'model', 409, 'PUT', {revision: 0, config: model.config});
+  await expect('admin', 'model', 400, 'PUT', {revision: 1, config: {provider: 'ark', model: 'fixture-ark', size: '2K', quality: 'standard'}});
+  await expect('admin', 'model', 400, 'PUT', {revision: 1, config: {...model.config, endpoint: 'https://attacker.example.test'}});
+  await provider.createImage([{bytes: png.buffer, mime: 'image/png'}], conf, '');
+  ok(captured.options.body.get('quality') === 'high', 'admin config reaches the actual provider adapter');
+  env.ARK_API_KEY = 'ark-fixture';
+  await provider.createImage([{bytes: png.buffer, mime: 'image/png'}], conf, '');
+  ok(captured.url.includes('api.openai.com'), 'adding another key cannot silently override explicit provider');
+  model = await (await expect('admin', 'model', 200, 'PUT', {revision: 1, config: {provider: 'ark', model: 'fixture-ark', size: '2K', quality: 'standard'}})).json();
+  await provider.createImage([{bytes: png.buffer, mime: 'image/png'}], conf, '');
+  ok(captured.url.includes('volces.com') && JSON.parse(captured.options.body).model === 'fixture-ark', 'second adapter respects saved config');
+  await expect('admin', 'model', 200, 'PUT', {revision: 2, config: {provider: 'openai', model: 'gpt-image-2', size: '1536x1024', quality: 'medium'}});
+  delete env.ARK_API_KEY;
+  const initial = await format.readRecords(local.database);
+  await maintenance.withWriteLease(async () => {await expect('admin', 'backup/start', 409, 'POST', {});});
+  database.prepare("UPDATE jobs SET status='running' WHERE id='job'").run();
+  await expect('admin', 'backup/start', 409, 'POST', {});
+  database.prepare("UPDATE jobs SET status='complete' WHERE id='job'").run();
+  const data = await (await expect('admin', 'backup/start', 200, 'POST', {})).json();
+  await expect('admin', 'backup/start', 409, 'POST', {});
+  await expect('v1', 'profile', 503, 'PATCH', {name: 'forbidden during backup'});
+  await expect('auth', 'request-code', 503, 'POST', {email: 'any@example.test'});
+  await expect('v1', 'shared/test-share-token', 200, 'GET', undefined, '');
+  await expect('admin', `backup/${data.id}/file/p1`, 403, 'GET', undefined, member);
+  ok(!('account_sessions' in data.records) && !JSON.stringify(data.records).includes(ownerToken) && !JSON.stringify(data.records).includes(env.OPENAI_API_KEY), 'archive excludes session tokens and server secrets');
+  const files = new Map();
+  for (const item of data.manifest.files) {
+    const bytes = new Uint8Array(await (await expect('admin', `backup/${data.id}/file/${item.photoId}`, 200)).arrayBuffer());
+    item.sha256 = await format.sha256(bytes); files.set(item.path, bytes);
+  }
+  await expect('admin', `operations/${data.id}/heartbeat`, 200, 'POST', {});
+  await expect('admin', `backup/${data.id}/finish`, 200, 'POST', {});
+  await format.validatePackage(data.manifest, data.records); checks++;
+  const same = await (await expect('admin', 'restore/preview', 200, 'POST', data)).json();
+  ok(same.totalAdd === 0 && same.conflicts.length === 0, 'same backup dry-run is a verified no-op including photo hashes');
+  const damaged = structuredClone(data); damaged.records.users[0].credits++;
+  await expect('admin', 'restore/preview', 400, 'POST', damaged);
+  const pathAttack = structuredClone(data); pathAttack.manifest.files[0].path = '../secret';
+  await expect('admin', 'restore/preview', 400, 'POST', pathAttack);
+  const missingFile = structuredClone(data); missingFile.manifest.files.pop();
+  await expect('admin', 'restore/preview', 400, 'POST', missingFile);
+  database.prepare("UPDATE users SET credits=credits+1 WHERE id='member'").run();
+  const conflict = await (await expect('admin', 'restore/preview', 200, 'POST', data)).json();
+  ok(conflict.conflicts.some(c => c.table === 'users'), 'newer credits conflict instead of being overwritten');
+  await expect('admin', 'restore/start', 409, 'POST', data);
+  database.prepare("UPDATE users SET credits=credits-1 WHERE id='member'").run();
+  database.prepare("DELETE FROM photos WHERE id='p2'").run(); await local.files.delete('member/p2');
+  const preview = await (await expect('admin', 'restore/preview', 200, 'POST', data)).json();
+  ok(preview.add.photos === 1 && preview.conflicts.length === 0, 'missing photo can be restored without touching other rows');
+  const restoring = await (await expect('admin', 'restore/start', 200, 'POST', data)).json();
+  await expect('admin', `restore/${restoring.id}/commit`, 409, 'POST', {confirm: '仅恢复缺失数据'});
+  ok(!database.prepare("SELECT id FROM photos WHERE id='p2'").get(), 'no row is inserted before the matching file is available');
+  await expect('admin', `restore/${restoring.id}/file/p2`, 400, 'PUT', new Uint8Array([1, 2, 3]));
+  const p2 = data.manifest.files.find(f => f.photoId === 'p2');
+  await expect('admin', `restore/${restoring.id}/file/p2`, 200, 'PUT', files.get(p2.path));
+  await expect('admin', `restore/${restoring.id}/commit`, 400, 'POST', {confirm: 'yes'});
+  database.exec("CREATE TRIGGER restore_failure BEFORE INSERT ON admin_audit WHEN NEW.action='restore.complete' BEGIN SELECT RAISE(ABORT,'simulated restore failure'); END");
+  await expect('admin', `restore/${restoring.id}/commit`, 400, 'POST', {confirm: '仅恢复缺失数据'});
+  ok(!database.prepare("SELECT id FROM photos WHERE id='p2'").get(), 'failed commit rolls back earlier photo inserts, not just the last statement');
+  database.exec('DROP TRIGGER restore_failure');
+  const getOriginal = local.files.get.bind(local.files);
+  let releaseFile, commitReached;
+  const held = new Promise(resolve => {releaseFile = resolve;}), reached = new Promise(resolve => {commitReached = resolve;});
+  local.files.get = async key => {if (key === `member/restore-${restoring.id}/p2`) {commitReached(); await held;} return getOriginal(key);};
+  const committing = request('admin', `restore/${restoring.id}/commit`, 'POST', {confirm: '仅恢复缺失数据'});
+  await reached;
+  await expect('admin', `operations/${restoring.id}`, 409, 'DELETE');
+  await expect('admin', `operations/${restoring.id}/heartbeat`, 200, 'POST', {});
+  releaseFile();
+  ok((await committing).status === 200, 'concurrent cancellation cannot delete files during final commit');
+  local.files.get = getOriginal;
+  await expect('admin', `restore/${restoring.id}/commit`, 200, 'POST', {confirm: '仅恢复缺失数据'});
+  const restored = database.prepare("SELECT * FROM photos WHERE id='p2'").get();
+  ok(restored.object_key.includes('/restore-') && await format.sha256(await (await local.files.get(restored.object_key)).arrayBuffer()) === p2.sha256, 'restored file key resolves to byte-identical original');
+  const again = await (await expect('admin', 'restore/preview', 200, 'POST', data)).json();
+  ok(again.totalAdd === 0 && again.conflicts.length === 0, 'recovery is idempotent despite safe key remapping');
+  for (const table of ['users', 'email_accounts', 'albums', 'orders', 'jobs']) ok(format.canonical((await format.readRecords(local.database))[table]) === format.canonical(initial[table]), `preserves ${table} exactly`);
+  const cancelled = await (await expect('admin', 'restore/start', 200, 'POST', data)).json();
+  await expect('admin', `operations/${cancelled.id}`, 200, 'DELETE');
+  await expect('admin', `restore/${cancelled.id}/commit`, 409, 'POST', {confirm: '仅恢复缺失数据'});
+  const expired = await (await expect('admin', 'backup/start', 200, 'POST', {})).json();
+  database.prepare('UPDATE maintenance_lock SET expires=0').run(); database.prepare('UPDATE admin_operations SET expires=0 WHERE id=?').run(expired.id);
+  await expect('admin', `backup/${expired.id}/finish`, 409, 'POST', {});
+  await backup.cleanupExpired();
+  ok(!await local.files.get(`__admin_operations/${expired.id}/snapshot.json`), 'expired temporary snapshots are cleaned');
+  const zip = new JSZip(); zip.file('manifest.json', format.canonical(data.manifest)); zip.file('records.json', format.canonical(data.records));
+  for (const [name, bytes] of files) zip.file(name, bytes);
+  const archivePath = path.join(testRoot, 'fixture-backup.zip'); await writeFile(archivePath, await zip.generateAsync({type: 'nodebuffer'}));
+  const inspect = spawnSync(process.execPath, ['scripts/backup-tool.mjs', 'inspect', archivePath], {encoding: 'utf8'});
+  ok(inspect.status === 0 && JSON.parse(inspect.stdout).counts.photos === 2, 'CLI verifies the same portable ZIP');
+  const recoveryPath = path.join(testRoot, 'cli-restored');
+  const cli = spawnSync(process.execPath, ['scripts/backup-tool.mjs', 'restore', archivePath, recoveryPath], {encoding: 'utf8'});
+  assert.equal(cli.status, 0, cli.stderr); checks++;
+  const refused = spawnSync(process.execPath, ['scripts/backup-tool.mjs', 'restore', archivePath, recoveryPath], {encoding: 'utf8'});
+  ok(refused.status === 1 && refused.stderr.includes('为空'), 'CLI refuses to overwrite a populated destination');
+  target = await createLocalStorage(recoveryPath);
+  const recovered = await format.readRecords(target.database);
+  for (const table of format.TABLES.filter(t => t !== 'photos')) ok(format.canonical(recovered[table]) === format.canonical(data.records[table]), `portable recovery retains ${table}`);
+  ok((await target.files.list({limit: 1})).truncated, 'local object adapter supports paginated listing');
+  for (const photo of recovered.photos) ok(await format.sha256(await (await target.files.get(photo.object_key)).arrayBuffer()) === data.manifest.files.find(f => f.photoId === photo.id).sha256, 'portable recovery retains photo bytes');
+  await assert.rejects(() => restoreToEmpty(target, data, name => files.get(name)), /非空/); checks++;
+  // Exercise the transaction contract: a later constraint failure rolls back its earlier insert.
+  await assert.rejects(() => target.database.batch([target.database.prepare("INSERT INTO users VALUES('rollback','x',1,0,1)"), target.database.prepare("INSERT INTO users VALUES('owner','duplicate',1,0,1)")]));
+  ok(!target.connection.prepare("SELECT id FROM users WHERE id='rollback'").get(), 'database batch is atomic on failure');
+  console.log(JSON.stringify({success: true, checks, artifacts: testRoot, scope: 'owner authorization, all-file backup checksums, lock/concurrency, dry-run, conflict refusal, restore and rollback, local SQLite/files migration, model adapter/configuration; no production changes or external AI calls'}));
+} finally {target?.close(); local.close(); globalThis.fetch = fetchOriginal; delete globalThis.__adminTest;}

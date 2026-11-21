@@ -1,3 +1,4 @@
+import {withMaintenance} from '@/lib/maintenance';
 import {withCors} from '@/lib/cors';
 import { db,bucket,bindings,currentUser,body,text,owned,sameOrigin,uid,now,json,HttpError,rateLimit,hash,readableAlbum,photoDto,albumDto,jobDto } from '@/lib/server';
 import { validImage,MAX_ATTEMPTS,PRODUCTS } from '@/lib/prompts';
@@ -11,7 +12,7 @@ async function handle(request:Request,context:Ctx){try{
  if(area==='notify'&&method==='POST')return handleNotification(id,request);
  if(method!=='GET')sameOrigin(request);
  if(area==='state'&&method==='GET'){
-  const u=await currentUser(false,request);const config={ai:imageReady(),payments:bindings().PAYMENT_SALES_ENABLED==='true'?paymentChannels():[],products:PRODUCTS};
+  const u=await currentUser(false,request);const config={ai:await imageReady(),payments:bindings().PAYMENT_SALES_ENABLED==='true'?paymentChannels():[],products:PRODUCTS};
   if(!u)return json({user:null,photos:[],albums:[],jobs:[],config});
   await recoverStalledJobs(u.id);const balance:any=await db().prepare('SELECT credits FROM users WHERE id=?').bind(u.id).first();u.credits=balance.credits;
   const [p,a,j]=await Promise.all([db().prepare('SELECT * FROM photos WHERE owner=? ORDER BY created DESC').bind(u.id).all(),db().prepare('SELECT * FROM albums WHERE owner=? ORDER BY updated DESC').bind(u.id).all(),db().prepare('SELECT * FROM jobs WHERE owner=? ORDER BY created DESC LIMIT 30').bind(u.id).all()]);
@@ -84,7 +85,7 @@ async function handle(request:Request,context:Ctx){try{
  if(area==='exports'&&method==='POST'){await owned('albums',id,u.id);const b=await body(request);if(!['pdf','html','mp4'].includes(b.format))throw new HttpError('导出格式不正确');if(b.format!=='pdf'&&!u.pro)throw new HttpError('离线翻页和视频导出属于时光珍藏计划',403);return json({ok:true});}
  if(area==='comments'&&method==='DELETE'){const c:any=await db().prepare('SELECT c.*,a.owner AS album_owner FROM comments c JOIN albums a ON c.album_id=a.id WHERE c.id=?').bind(id).first();if(!c||!(c.owner===u.id||c.album_owner===u.id||u.admin))throw new HttpError('无权删除这条留言',403);await db().prepare('DELETE FROM comments WHERE id=?').bind(id).run();return json({ok:true});}
  if(area==='jobs'&&method==='POST'){
-  if(!imageReady())throw new HttpError('AI创作服务尚未配置，请先使用照片池和相册功能。',503);await rateLimit('generate:'+u.id,8,300);const b=await body(request);let job:any;
+  if(!(await imageReady()))throw new HttpError('AI创作服务尚未配置，请先使用照片池和相册功能。',503);await rateLimit('generate:'+u.id,8,300);const b=await body(request);let job:any;
   if(id){job=await owned('jobs',id,u.id);if(job.attempts>=MAX_ATTEMPTS)throw new HttpError('这份任务的3次出图已用完。你可以保留已有版本或开始新任务。',403);}
   else{
    if(!b.consent)throw new HttpError('请先确认照片使用授权');const sources=Array.isArray(b.sources)?b.sources.slice(0,6):[];if(!sources.length)throw new HttpError('请先选择照片');const config=b.config||{};if(!['reunion','travel','retouch'].includes(config.kind))throw new HttpError('创作类型不正确');if(config.kind==='reunion'&&sources.length<2)throw new HttpError('合影需要原合影和人物参考照，至少2张');for(const p of sources)await owned('photos',p,u.id);
@@ -106,15 +107,15 @@ async function handle(request:Request,context:Ctx){try{
    return json({id:job.id,photoId});
   }catch(e){if(reserved)await refundJobCredit(job.id,u.id);const message=e instanceof HttpError?e.message:'这次生成未完成，没有扣除出图次数。请稍后再试。';await db().prepare("UPDATE jobs SET status='failed',error=?,updated=? WHERE id=? AND owner=?").bind(message,now(),job.id,u.id).run();throw new HttpError(message,e instanceof HttpError?e.status:502);}
  }
- if(area==='orders'&&method==='POST'){if(!imageReady()||bindings().PAYMENT_SALES_ENABLED!=='true')throw new HttpError('付费服务尚未开放，暂不收款',503);const b=await body(request);if(!Object.hasOwn(PRODUCTS,b.product))throw new HttpError('套餐不存在');if(!paymentChannels().includes(b.channel))throw new HttpError('这个支付渠道尚未开通',503);await rateLimit('payment:'+u.id,5,60);const product=PRODUCTS[b.product as keyof typeof PRODUCTS];const orderId=uid();await db().prepare('INSERT INTO orders(id,owner,product,channel,amount,status,created) VALUES(?,?,?,?,?,\'pending\',?)').bind(orderId,u.id,b.product,b.channel,product.amount,now()).run();const payment=await createPayment({id:orderId,amount:product.amount,name:product.name,channel:b.channel},request);return json({id:orderId,...payment});}
+ if(area==='orders'&&method==='POST'){if(!(await imageReady())||bindings().PAYMENT_SALES_ENABLED!=='true')throw new HttpError('付费服务尚未开放，暂不收款',503);const b=await body(request);if(!Object.hasOwn(PRODUCTS,b.product))throw new HttpError('套餐不存在');if(!paymentChannels().includes(b.channel))throw new HttpError('这个支付渠道尚未开通',503);await rateLimit('payment:'+u.id,5,60);const product=PRODUCTS[b.product as keyof typeof PRODUCTS];const orderId=uid();await db().prepare('INSERT INTO orders(id,owner,product,channel,amount,status,created) VALUES(?,?,?,?,?,\'pending\',?)').bind(orderId,u.id,b.product,b.channel,product.amount,now()).run();const payment=await createPayment({id:orderId,amount:product.amount,name:product.name,channel:b.channel},request);return json({id:orderId,...payment});}
  if(area==='orders'&&method==='GET'){const order=await owned('orders',id,u.id);if(order.status!=='paid')await queryPayment(order);return json(await owned('orders',id,u.id));}
  if(area==='account'&&method==='DELETE'){
   const b=await body(request);if(b.confirm!=='删除全部作品')throw new HttpError('请输入“删除全部作品”确认');
   const as=await db().prepare('SELECT id FROM albums WHERE owner=?').bind(u.id).all();const statements=[db().prepare('UPDATE users SET credits=credits+(SELECT COUNT(*) FROM jobs WHERE owner=? AND charged=2) WHERE id=?').bind(u.id,u.id)];for(const a of as.results)for(const t of ['comments','likes','ratings','share_sessions'])statements.push(db().prepare(`DELETE FROM ${t} WHERE album_id=?`).bind(a.id));for(const t of ['photos','albums','jobs','comments','likes','ratings'])statements.push(db().prepare(`DELETE FROM ${t} WHERE owner=?`).bind(u.id));await db().batch(statements);
   let cursor:string|undefined;do{const list=await bucket().list({prefix:`${u.id}/`,cursor});if(list.objects.length)await bucket().delete(list.objects.map(o=>o.key));cursor=list.truncated?list.cursor:undefined;}while(cursor);return json({ok:true});
  }
- if(area==='admin'&&method==='GET'){if(!u.admin)throw new HttpError('没有管理权限',403);return json({ai:imageReady(),payments:paymentChannels(),configuration:['OPENAI_API_KEY','ARK_API_KEY','WECHAT_MCH_ID','WECHAT_PRIVATE_KEY','WECHAT_API_V3_KEY','WECHAT_PLATFORM_PUBLIC_KEY','ALIPAY_APP_ID','ALIPAY_PRIVATE_KEY','ALIPAY_PUBLIC_KEY'].map(key=>({key,configured:!!bindings()[key]}))});}
+ if(area==='admin'&&method==='GET'){if(!u.admin)throw new HttpError('没有管理权限',403);return json({ai:await imageReady(),payments:paymentChannels(),configuration:['OPENAI_API_KEY','ARK_API_KEY','WECHAT_MCH_ID','WECHAT_PRIVATE_KEY','WECHAT_API_V3_KEY','WECHAT_PLATFORM_PUBLIC_KEY','ALIPAY_APP_ID','ALIPAY_PRIVATE_KEY','ALIPAY_PUBLIC_KEY'].map(key=>({key,configured:!!bindings()[key]}))});}
  throw new HttpError('接口不存在',404);
  }catch(e){return json({error:e instanceof HttpError?e.message:'操作暂未完成，请稍后再试。'},e instanceof HttpError?e.status:500);}}
-const endpoint=withCors(handle);
+const endpoint=withCors(withMaintenance(handle));
 export const GET=endpoint;export const POST=endpoint;export const PATCH=endpoint;export const PUT=endpoint;export const DELETE=endpoint;export const OPTIONS=endpoint;

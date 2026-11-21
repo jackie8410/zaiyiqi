@@ -15,6 +15,13 @@
       "when": 1794850189549,
       "tag": "0001_email_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795292051793,
+      "tag": "0002_admin_portability",
+      "breakpoints": true
     }
   ]
 }
